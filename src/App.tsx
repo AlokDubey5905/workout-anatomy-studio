@@ -1,75 +1,149 @@
 
+import { useState } from "react";
 import AnatomyViewer from "./components/AnatomyViewer";
 import "./App.css";
 
+const exercises = [
+    {
+        id: "bicep",
+        name: "Bicep Curl",
+        description: "Elbow flexion exercise",
+        primary: "Biceps Brachii",
+        secondary: ["Brachialis", "Brachioradialis"],
+        muscles: ["biceps", "forearms"],
+        sets: 3,
+        reps: 12,
+    },
+    {
+        id: "squat",
+        name: "Squat",
+        description: "Lower body compound exercise",
+        primary: "Quadriceps",
+        secondary: ["Gluteus Maximus", "Hamstrings"],
+        muscles: ["quads", "glutes", "hamstrings"],
+        sets: 3,
+        reps: 12,
+    },
+    {
+        id: "pushup",
+        name: "Push Up",
+        description: "Upper body pushing exercise",
+        primary: "Pectoralis Major",
+        secondary: ["Triceps", "Anterior Deltoids"],
+        muscles: ["chest", "triceps", "front-shoulders"],
+        sets: 3,
+        reps: 12,
+    },
+    {
+        id: "shoulder",
+        name: "Shoulder Press",
+        description: "Overhead pressing exercise",
+        primary: "Deltoids",
+        secondary: ["Triceps Brachii", "Trapezius"],
+        muscles: ["front-shoulders", "triceps", "traps"],
+        sets: 3,
+        reps: 10,
+    },
+];
+
 function App() {
-  return (
-    <main className="studio">
+    const [selectedId, setSelectedId] = useState("bicep");
 
-      <header className="header">
-        <div>
-          <h1>WORKOUT ANATOMY STUDIO</h1>
-          <p>3D Exercise & Muscle Visualization</p>
-        </div>
+    const selectedExercise =
+        exercises.find((exercise) => exercise.id === selectedId)!
+        ;
 
-        <span className="version">VERSION 0.1</span>
-      </header>
+    return (
+        <main className="studio">
 
-      <section className="workspace">
+            <header className="header">
+                <div>
+                    <h1>WORKOUT ANATOMY STUDIO</h1>
+                    <p>
+                        3D Exercise & Muscle Visualization
+                    </p>
+                </div>
 
-        <aside className="sidebar">
-          <h3>EXERCISES</h3>
+                <span className="version">
+                    VERSION 0.5
+                </span>
+            </header>
 
-          <button className="exercise active">
-            Bicep Curl
-          </button>
+            <section className="workspace">
 
-          <button className="exercise">
-            Squat
-          </button>
+                <aside className="sidebar">
+                    <h3>EXERCISES</h3>
 
-          <button className="exercise">
-            Push Up
-          </button>
+                    {exercises.map((exercise) => (
+                        <button
+                            key={exercise.id}
+                            className={
+                                "exercise " +
+                                (selectedId === exercise.id
+                                    ? "active"
+                                    : "")
+                            }
+                            onClick={() =>
+                                setSelectedId(exercise.id)
+                            }
+                        >
+                            {exercise.name}
+                        </button>
+                    ))}
+                </aside>
 
-          <button className="exercise">
-            Shoulder Press
-          </button>
-        </aside>
+                <section className="viewer">
+                    <div className="viewer-label">
+                        3D MUSCULAR ANATOMY
+                    </div>
+                    <AnatomyViewer
+                        highlightedMuscles={
+                            selectedExercise.muscles
+                        }
+                    />
+                </section>
 
-        <section className="viewer">
-          <div className="viewer-label">
-            3D HUMAN MODEL
-          </div>
+                <aside className="info-panel">
+                    <h3>ANATOMY DETAILS</h3>
 
-          <AnatomyViewer />
-        </section>
+                    <p>Selected Exercise</p>
+                    <h2>{selectedExercise.name}</h2>
 
-        <aside className="info-panel">
-          <h3>ANATOMY DETAILS</h3>
+                    <hr />
 
-          <p>Selected Exercise</p>
-          <h2>Bicep Curl</h2>
+                    <p>Exercise Description</p>
+                    <h3>{selectedExercise.description}</h3>
 
-          <hr />
+                    <p>Primary Muscle</p>
+                    <h3>{selectedExercise.primary}</h3>
 
-          <p>Primary Muscle</p>
-          <h3>Biceps Brachii</h3>
+                    <p>Secondary Muscles</p>
 
-          <p>Secondary Muscles</p>
-          <h3>Brachialis</h3>
-          <h3>Brachioradialis</h3>
-        </aside>
+                    {selectedExercise.secondary.map(
+                        (muscle) => (
+                            <h3 key={muscle}>{muscle}</h3>
+                        )
+                    )}
 
-      </section>
+                    <hr />
 
-      <footer>
-        <span>WORKOUT ANATOMY STUDIO</span>
-        <span>3D ENGINE: THREE.JS</span>
-      </footer>
+                    <p>Recommended Training</p>
 
-    </main>
-  );
+                    <h3>
+                        {selectedExercise.sets} Sets ×{" "}
+                        {selectedExercise.reps} Reps
+                    </h3>
+                </aside>
+
+            </section>
+
+            <footer>
+                <span>WORKOUT ANATOMY STUDIO</span>
+                <span>3D ENGINE: THREE.JS</span>
+            </footer>
+
+        </main>
+    );
 }
 
 export default App;

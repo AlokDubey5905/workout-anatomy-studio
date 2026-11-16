@@ -1,52 +1,109 @@
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import * as THREE from "three";
 import { useGLTF, useAnimations } from "@react-three/drei";
-import { LoopRepeat } from "three";
+import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 
 export default function AnatomicalHuman() {
   const { scene, animations } = useGLTF(
     "/models/muscular-human-idle.glb"
   );
 
-  const { actions, names } = useAnimations(
+  // Clone the cached GLB without modifying the original scene
+  const normalized = useMemo(() => {
+    const model = clone(scene);
+
+    model.traverse((object) => {
+      if (
+        object instanceof THREE.Mesh &&
+        object.name.toLowerCase().includes("eye") &&
+        !(object instanceof THREE.SkinnedMesh)
+      ) {
+        object.visible = false;
+      }
+    });
+
+    model.updateMatrixWorld(true);
+
+    // Calculate dimensions only once for this clone
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const targetHeight = 4.5;
+    const scale = size.y > 0 ? targetHeight / size.y : 1;
+
+    // Centre horizontally and align feet with y = 0
+    const position: [number, number, number] = [
+      -center.x * scale,
+      -box.min.y * scale,
+      -center.z * scale,
+    ];
+
+    console.log("MODEL NORMALIZATION:", {
+      originalHeight: size.y,
+      scale,
+      targetHeight,
+    });
+
+    return {
+      model,
+      scale,
+      position,
+    };
+  }, [scene]);
+
+  const { actions } = useAnimations(
     animations,
-    scene
+    normalized.model
   );
 
-  useEffect(() => {
-    console.log("Available animations:", names);
+  const longestClip = useMemo(() => {
+    if (!animations.length) return null;
 
-    if (names.length === 0) {
-      console.error("No animations found in GLB");
+    return animations.reduce((best, clip) =>
+      clip.duration > best.duration ? clip : best
+    );
+  }, [animations]);
+
+  useEffect(() => {
+    if (!longestClip) {
+      console.error("No animation clips found");
       return;
     }
 
-    const action = actions[names[0]];
+    const action = actions[longestClip.name];
 
     if (!action) {
-      console.error("Animation action unavailable");
+      console.error(
+        "Animation action unavailable:",
+        longestClip.name
+      );
       return;
     }
 
     action.reset();
-    action.setLoop(LoopRepeat, Infinity);
+    action.setLoop(THREE.LoopRepeat, Infinity);
     action.play();
 
-    console.log("Playing:", names[0]);
+    console.log("Playing animation:", {
+      name: longestClip.name,
+      duration: longestClip.duration,
+    });
 
     return () => {
       action.stop();
     };
-  }, [actions, names]);
+  }, [actions, longestClip]);
 
   return (
-    <primitive
-      object={scene}
-      position={[0, 0, 0]}
-    />
+    <group
+      position={normalized.position}
+      scale={normalized.scale}
+    >
+      <primitive object={normalized.model} />
+    </group>
   );
 }
 
-useGLTF.preload(
-  "/models/muscular-human-idle.glb"
-);
+useGLTF.preload("/models/muscular-human-idle.glb");
