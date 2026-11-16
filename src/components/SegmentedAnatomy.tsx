@@ -8,6 +8,7 @@ const MODEL_URL = "/models/muscle-anatomy/male.glb";
 const MANIFEST_URL = "/models/muscle-anatomy/manifest.json";
 
 type ManifestRegion = {
+    id: string;
     muscle: string;
     label: string;
     side: string;
@@ -21,6 +22,29 @@ type MuscleManifest = {
 type Props = {
     highlightedMuscles: string[];
 };
+
+function belongsToRegion(
+    mesh: THREE.Mesh,
+    expectedNames: Set<string>
+): boolean {
+    let node: THREE.Object3D | null = mesh;
+
+    while (node) {
+        for (const expected of expectedNames) {
+            if (
+                node.name === expected ||
+                node.name.startsWith(`${expected}-geometry`) ||
+                node.name.startsWith(`${expected}_`)
+            ) {
+                return true;
+            }
+        }
+
+        node = node.parent;
+    }
+
+    return false;
+}
 
 export default function SegmentedAnatomy({
     highlightedMuscles,
@@ -37,24 +61,16 @@ export default function SegmentedAnatomy({
         [manifestText]
     );
 
-    // Clone the scene and materials so highlighting
-    // does not modify the cached original GLB.
     const model = useMemo(() => {
         const clonedScene = scene.clone(true);
 
         clonedScene.traverse((object) => {
-            const mesh = object as THREE.Mesh;
+            if (!(object instanceof THREE.Mesh)) return;
 
-            if (!mesh.isMesh) return;
-
-            const cloneMaterial = (
-                material: THREE.Material
-            ) => {
+            const cloneMaterial = (material: THREE.Material) => {
                 const cloned = material.clone();
 
-                if (
-                    cloned instanceof THREE.MeshStandardMaterial
-                ) {
+                if (cloned instanceof THREE.MeshStandardMaterial) {
                     cloned.userData.baseEmissive =
                         cloned.emissive.clone();
 
@@ -65,124 +81,109 @@ export default function SegmentedAnatomy({
                 return cloned;
             };
 
-            mesh.material = Array.isArray(mesh.material)
-                ? mesh.material.map(cloneMaterial)
-                : cloneMaterial(mesh.material);
+            object.material = Array.isArray(object.material)
+                ? object.material.map(cloneMaterial)
+                : cloneMaterial(object.material);
 
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            object.castShadow = true;
+            object.receiveShadow = true;
         });
 
         return clonedScene;
     }, [scene]);
 
-    // Check whether manifest mesh names match the GLB.
+    // Map manifest regions to actual meshes using their full hierarchy.
+    const regionMeshes = useMemo(() => {
+        const result = new Map<string, THREE.Mesh[]>();
 
-    useEffect(() => {
-        const actualMeshes: {
-            name: string;
-            vertices: number;
-            material: string;
-        }[] = [];
+        for (const region of manifest.regions) {
+            const expectedNames = new Set(region.meshNames);
+            const meshes: THREE.Mesh[] = [];
 
-        model.traverse((object) => {
-            if (object instanceof THREE.Mesh) {
-                actualMeshes.push({
-                    name: object.name,
-                    vertices: object.geometry.attributes.position?.count ?? 0,
-                    material: Array.isArray(object.material)
-                        ? "Multiple"
-                        : object.material.type,
-                });
-            }
-        });
+            model.traverse((object) => {
+                if (
+                    object instanceof THREE.Mesh &&
+                    belongsToRegion(object, expectedNames)
+                ) {
+                    meshes.push(object);
+                }
+            });
 
-        const expectedNames = manifest.regions.flatMap(
-            (region) => region.meshNames
-        );
+            result.set(region.id, meshes);
+        }
 
-        const actualNames = new Set(
-            actualMeshes.map((mesh) => mesh.name)
-        );
-
-        const matched = expectedNames.filter(
-            (name) => actualNames.has(name)
-        );
-
-        const missing = expectedNames.filter(
-            (name) => !actualNames.has(name)
-        );
-
-        console.log("========== GLB MESH INSPECTION ==========");
-        console.table(actualMeshes);
-
-        console.log("========== MANIFEST INSPECTION ==========");
-        console.log({
-            expectedMeshes: expectedNames.length,
-            matchedMeshes: matched.length,
-            missingMeshes: missing.length,
-            matched,
-            missing,
-        });
+        return result;
     }, [model, manifest]);
 
     // Highlight selected muscle groups.
     useEffect(() => {
-        const selectedMeshNames = new Set(
-            manifest.regions
-                .filter((region) =>
-                    highlightedMuscles.includes(region.muscle)
-                )
-                .flatMap((region) => region.meshNames)
-        );
+        const selectedGroups = new Set(highlightedMuscles);
 
-        model.traverse((object) => {
-            const mesh = object as THREE.Mesh;
-            if (!mesh.isMesh) return;
+        for (const region of manifest.regions) {
+            const meshes = regionMeshes.get(region.id) ?? [];
+            const highlighted = selectedGroups.has(region.muscle);
 
-            const materials = Array.isArray(mesh.material)
-                ? mesh.material
-                : [mesh.material];
+            for (const mesh of meshes) {
+                const materials = Array.isArray(mesh.material)
+                    ? mesh.material
+                    : [mesh.material];
 
-            const isHighlighted = selectedMeshNames.has(
-                mesh.name
-            );
-
-            materials.forEach((material) => {
-                if (
-                    !(material instanceof THREE.MeshStandardMaterial)
-                ) {
-                    return;
-                }
-
-                const originalEmissive =
-                    material.userData.baseEmissive as
-                    | THREE.Color
-                    | undefined;
-
-                const originalIntensity =
-                    material.userData.baseEmissiveIntensity as
-                    | number
-                    | undefined;
-
-                if (isHighlighted) {
-                    material.emissive.set("#ff2525");
-                    material.emissiveIntensity = 0.75;
-                } else {
-                    if (originalEmissive) {
-                        material.emissive.copy(originalEmissive);
+                for (const material of materials) {
+                    if (
+                        !(material instanceof THREE.MeshStandardMaterial)
+                    ) {
+                        continue;
                     }
 
-                    material.emissiveIntensity =
-                        originalIntensity ?? 0;
-                }
-            });
-        });
-    }, [model, manifest, highlightedMuscles]);
+                    const originalEmissive =
+                        material.userData.baseEmissive as
+                            | THREE.Color
+                            | undefined;
 
-    return (
-        <primitive object={model} />
-    );
+                    const originalIntensity =
+                        material.userData.baseEmissiveIntensity as
+                            | number
+                            | undefined;
+
+                    if (highlighted) {
+                        material.emissive.set("#ff2525");
+                        material.emissiveIntensity = 0.75;
+                    } else {
+                        if (originalEmissive) {
+                            material.emissive.copy(originalEmissive);
+                        }
+
+                        material.emissiveIntensity =
+                            originalIntensity ?? 0;
+                    }
+                }
+            }
+        }
+    }, [manifest, regionMeshes, highlightedMuscles]);
+
+    // Verify mapping coverage.
+    useEffect(() => {
+        const resolved = manifest.regions.filter(
+            (region) =>
+                (regionMeshes.get(region.id)?.length ?? 0) > 0
+        );
+
+        const unresolved = manifest.regions.filter(
+            (region) =>
+                (regionMeshes.get(region.id)?.length ?? 0) === 0
+        );
+
+        console.info("[Anatomy mapping]", {
+            totalRegions: manifest.regions.length,
+            resolvedRegions: resolved.length,
+            unresolvedRegions: unresolved.length,
+            unresolved: unresolved.map(
+                (region) => `${region.label} (${region.side})`
+            ),
+        });
+    }, [manifest, regionMeshes]);
+
+    return <primitive object={model} />;
 }
 
 useGLTF.preload(MODEL_URL);
